@@ -23,7 +23,7 @@ const HF_TOKEN = process.env.HF_TOKEN;
 
         const response = await axios.post(
 
-            "https://api-inference.huggingface.co/models/unitary/toxic-bert",
+            "https://api-inference.huggingface.co/models/cardiffnlp/twitter-roberta-base-offensive",
 
             {
                 inputs: message
