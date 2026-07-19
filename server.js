@@ -10,47 +10,69 @@ const PORT = process.env.PORT || 3000;
 
 
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
-
 const HF_TOKEN = process.env.HF_TOKEN;
 
 
 
+// ===============================
+// AI Toxicity Detection
+// ===============================
 
+async function checkToxicity(message)
 {
+
+    // Ignore very short messages
+    if(message.length < 4)
+    {
+        return {
+            toxic:false,
+            score:0,
+            label:"Too short"
+        };
+    }
+
 
     try
     {
 
         const response = await axios.post(
 
-            "https://api-inference.huggingface.co/models/cardiffnlp/twitter-roberta-base-offensive",
+            "https://api-inference.huggingface.co/models/unitary/toxic-bert",
 
             {
                 inputs: message
             },
 
             {
+
                 headers:
                 {
                     Authorization:
-                    `Bearer ${HF_TOKEN}`
+                    `Bearer ${HF_TOKEN}`,
+
+                    "Content-Type":
+                    "application/json"
                 }
+
             }
 
         );
 
 
-        let results = response.data[0];
+
+        const results = response.data[0];
 
 
         let toxicScore = 0;
 
 
-        for (const item of results)
+
+        for(const item of results)
         {
 
             if(
-                item.label.toLowerCase().includes("toxic")
+                item.label.toLowerCase()
+                .includes("toxic")
             )
             {
 
@@ -73,24 +95,31 @@ const HF_TOKEN = process.env.HF_TOKEN;
 
 
             label:
-            "TOXIC"
+            "Toxic"
 
         };
 
 
     }
-    catch(err)
+
+    catch(error)
     {
 
         console.log(
-            "AI Error:",
-            err.message
+            "AI ERROR:",
+            error.response?.data ||
+            error.message
         );
 
 
         return {
+
             toxic:false,
-            score:0
+
+            score:0,
+
+            label:"AI Error"
+
         };
 
     }
@@ -101,12 +130,27 @@ const HF_TOKEN = process.env.HF_TOKEN;
 
 
 
-
+// ===============================
+// Roblox Report Endpoint
+// ===============================
 
 app.post("/report", async(req,res)=>{
 
 
-    const body=req.body;
+    const body = req.body;
+
+
+    if(!body.message)
+    {
+        return res.sendStatus(400);
+    }
+
+
+
+    console.log(
+        "Received:",
+        body
+    );
 
 
 
@@ -117,82 +161,140 @@ app.post("/report", async(req,res)=>{
 
 
 
-    console.log(ai);
+    console.log(
+        "AI Result:",
+        ai
+    );
 
 
+
+    // Only send serious detections
 
     if(ai.toxic)
     {
 
-
-        await axios.post(
-            DISCORD_WEBHOOK,
-            {
+        try
+        {
 
 
-                embeds:
-                [
-
-                    {
-
-                        title:
-                        "⚠ AI Toxic Chat Detection",
+            const joinURL =
+            `https://roblox-discord-backend-lieu.onrender.com/join?place=${body.placeId}&job=${body.jobId}`;
 
 
-                        color:
-                        16711680,
+
+            await axios.post(
+
+                DISCORD_WEBHOOK,
+
+                {
+
+                    embeds:
+                    [
+
+                        {
+
+                            title:
+                            "⚠ AI Toxic Chat Detection",
 
 
-                        fields:
-                        [
-
-                            {
-                                name:"Player",
-                                value:body.player
-                            },
+                            color:
+                            16711680,
 
 
-                            {
-                                name:"Message",
-                                value:body.message
-                            },
+                            description:
+
+                            `**Message:** ${body.message}\n\n`+
+
+                            `[🎮 Join Server](${joinURL})`,
 
 
-                            {
-                                name:"AI Confidence",
-                                value:
-                                Math.round(ai.score*100)
-                                +"%"
-                            },
+
+                            fields:
+                            [
+
+                                {
+
+                                    name:
+                                    "Player",
+
+                                    value:
+                                    body.player || "Unknown"
+
+                                },
 
 
-                            {
-                                name:"Category",
-                                value:
-                                ai.label
-                            },
+                                {
+
+                                    name:
+                                    "User ID",
+
+                                    value:
+                                    String(body.userid || "Unknown")
+
+                                },
 
 
-                            {
-                                name:"Server",
-                                value:
-                                body.jobId
-                            }
+                                {
 
-                        ],
+                                    name:
+                                    "AI Confidence",
+
+                                    value:
+                                    Math.round(ai.score * 100)
+                                    + "%"
+
+                                },
 
 
-                        timestamp:
-                        new Date()
+                                {
 
-                    }
+                                    name:
+                                    "Category",
 
-                ]
+                                    value:
+                                    ai.label
 
-            }
+                                },
 
-        );
 
+                                {
+
+                                    name:
+                                    "Server JobId",
+
+                                    value:
+                                    body.jobId || "Unknown"
+
+                                }
+
+
+                            ],
+
+
+                            timestamp:
+                            new Date().toISOString()
+
+
+                        }
+
+                    ]
+
+                }
+
+            );
+
+
+        }
+
+        catch(error)
+        {
+
+            console.log(
+                "Discord Error:",
+                error.message
+            );
+
+        }
 
     }
 
@@ -207,10 +309,96 @@ app.post("/report", async(req,res)=>{
 
 
 
+// ===============================
+// Roblox Join Redirect
+// ===============================
+
+app.get("/join",(req,res)=>{
+
+
+    const place =
+    req.query.place;
+
+
+    const job =
+    req.query.job;
+
+
+
+    if(!place || !job)
+    {
+
+        return res.send(
+            "Missing server information"
+        );
+
+    }
+
+
+
+    const robloxURL =
+
+    `roblox://experiences/start?placeId=${place}&gameInstanceId=${job}`;
+
+
+
+    res.send(`
+
+    <html>
+
+    <head>
+
+    <title>
+    Joining Roblox Server
+    </title>
+
+    </head>
+
+
+    <body>
+
+
+    <h2>
+    Joining Roblox Server...
+    </h2>
+
+
+    <a href="${robloxURL}">
+    Click here if Roblox does not open
+    </a>
+
+
+
+    <script>
+
+    window.location.href="${robloxURL}";
+
+
+    </script>
+
+
+    </body>
+
+
+    </html>
+
+    `);
+
+
+});
+
+
+
+
+
+// ===============================
+// Status Check
+// ===============================
+
 app.get("/",(req,res)=>{
 
     res.send(
-        "AI Roblox Moderation Online"
+        "Roblox AI Moderation Backend Online"
     );
 
 });
@@ -219,10 +407,14 @@ app.get("/",(req,res)=>{
 
 
 
+// ===============================
+// Start Server
+// ===============================
+
 app.listen(PORT,()=>{
 
     console.log(
-        "Backend running"
+        "Backend running on port " + PORT
     );
 
 });
