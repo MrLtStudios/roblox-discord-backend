@@ -1,190 +1,203 @@
 const express = require("express");
+const axios = require("axios");
 
 const app = express();
 
 app.use(express.json());
 
+
 const PORT = process.env.PORT || 3000;
 
-const WEBHOOK = process.env.DISCORD_WEBHOOK;
+
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
+
+const HF_TOKEN = process.env.HF_TOKEN;
 
 
-// =========================
-// Roblox sends reports here
-// =========================
 
-app.post("/report", async (req, res) => {
+async function checkToxicity(message)
+{
 
-    const body = req.body;
+    try
+    {
 
-    console.log("Report received:", body);
+        const response = await axios.post(
 
+            "https://api-inference.huggingface.co/models/unitary/toxic-bert",
 
-    if (!WEBHOOK) {
-        console.log("Missing Discord webhook");
-        return res.sendStatus(500);
-    }
-
-
-    try {
-
-        const joinLink =
-        `https://roblox-discord-backend-lieu.onrender.com/join?place=${body.placeId}&job=${body.jobId}`;
-
-
-        await fetch(WEBHOOK, {
-
-            method: "POST",
-
-            headers: {
-                "Content-Type": "application/json"
+            {
+                inputs: message
             },
 
+            {
+                headers:
+                {
+                    Authorization:
+                    `Bearer ${HF_TOKEN}`
+                }
+            }
 
-            body: JSON.stringify({
+        );
 
-                embeds: [
+
+        let result = response.data;
+
+
+        if(!result || !result[0])
+        {
+            return {
+                toxic:false,
+                score:0
+            };
+        }
+
+
+
+        let highest = result[0].reduce(
+            (a,b)=>
+            a.score > b.score ? a:b
+        );
+
+
+
+        return {
+
+            toxic:
+            highest.label.toLowerCase().includes("toxic")
+            &&
+            highest.score > 0.75,
+
+
+            score:
+            highest.score,
+
+
+            label:
+            highest.label
+
+        };
+
+
+    }
+    catch(err)
+    {
+
+        console.log(
+            "AI Error:",
+            err.message
+        );
+
+
+        return {
+            toxic:false
+        };
+
+    }
+
+}
+
+
+
+
+
+
+
+app.post("/report", async(req,res)=>{
+
+
+    const body=req.body;
+
+
+
+    const ai =
+    await checkToxicity(
+        body.message
+    );
+
+
+
+    console.log(ai);
+
+
+
+    if(ai.toxic)
+    {
+
+
+        await axios.post(
+            DISCORD_WEBHOOK,
+            {
+
+
+                embeds:
+                [
 
                     {
 
-                        title: "⚠ Toxic Chat Detected",
-
-                        color: 16711680,
-
-
-                        description:
-                        `**Message:** ${body.message}\n\n` +
-                        `[🎮 Join Server](${joinLink})`,
+                        title:
+                        "⚠ AI Toxic Chat Detection",
 
 
-                        fields: [
+                        color:
+                        16711680,
+
+
+                        fields:
+                        [
 
                             {
-                                name: "Player",
-                                value: body.player || "Unknown",
-                                inline: true
+                                name:"Player",
+                                value:body.player
                             },
 
 
                             {
-                                name: "User ID",
-                                value: String(body.userid || "Unknown"),
-                                inline: true
+                                name:"Message",
+                                value:body.message
                             },
 
 
                             {
-                                name: "Server JobId",
-                                value: body.jobId || "Unknown"
+                                name:"AI Confidence",
+                                value:
+                                Math.round(ai.score*100)
+                                +"%"
                             },
 
 
                             {
-                                name: "Place ID",
-                                value: String(body.placeId || "Unknown")
+                                name:"Category",
+                                value:
+                                ai.label
+                            },
+
+
+                            {
+                                name:"Server",
+                                value:
+                                body.jobId
                             }
 
                         ],
 
 
-                        footer: {
-
-                            text: "Roblox Moderation System"
-
-                        },
-
-
-                        timestamp: new Date().toISOString()
+                        timestamp:
+                        new Date()
 
                     }
 
                 ]
 
-            })
+            }
 
-        });
-
-
-        res.sendStatus(200);
-
-
-    } catch (err) {
-
-        console.error("Discord Error:", err);
-
-        res.sendStatus(500);
-
-    }
-
-});
-
-
-
-
-// =========================
-// Join Server Redirect
-// =========================
-
-app.get("/join", (req, res) => {
-
-
-    const place = req.query.place;
-
-    const job = req.query.job;
-
-
-    if (!place || !job) {
-
-        return res.send(
-            "Missing PlaceId or JobId"
         );
 
+
     }
 
 
 
-    const robloxLink =
-    `roblox://experiences/start?placeId=${place}&gameInstanceId=${job}`;
-
-
-
-    res.send(`
-
-        <!DOCTYPE html>
-
-        <html>
-
-        <head>
-
-        <title>Joining Roblox Server</title>
-
-        </head>
-
-
-        <body>
-
-        <h2>Joining Roblox Server...</h2>
-
-        <p>If Roblox does not open automatically:</p>
-
-
-        <a href="${robloxLink}">
-            Click here to join
-        </a>
-
-
-        <script>
-
-        window.location.href = "${robloxLink}";
-
-        </script>
-
-
-        </body>
-
-        </html>
-
-    `);
+    res.sendStatus(200);
 
 
 });
@@ -192,27 +205,23 @@ app.get("/join", (req, res) => {
 
 
 
-// =========================
-// Health Check
-// =========================
 
-app.get("/", (req,res)=>{
+app.get("/",(req,res)=>{
 
-    res.send("Roblox Discord Backend Online");
+    res.send(
+        "AI Roblox Moderation Online"
+    );
 
 });
 
 
 
 
-// =========================
-// Start Server
-// =========================
 
-app.listen(PORT, () => {
+app.listen(PORT,()=>{
 
     console.log(
-        `Backend running on port ${PORT}`
+        "Backend running"
     );
 
 });
