@@ -15,7 +15,7 @@ const HF_TOKEN = process.env.HF_TOKEN;
 
 
 
-async function checkToxicity(message)
+
 {
 
     try
@@ -40,40 +40,40 @@ async function checkToxicity(message)
         );
 
 
-        let result = response.data;
+        let results = response.data[0];
 
 
-        if(!result || !result[0])
+        let toxicScore = 0;
+
+
+        for (const item of results)
         {
-            return {
-                toxic:false,
-                score:0
-            };
+
+            if(
+                item.label.toLowerCase().includes("toxic")
+            )
+            {
+
+                toxicScore = item.score;
+
+            }
+
         }
-
-
-
-        let highest = result[0].reduce(
-            (a,b)=>
-            a.score > b.score ? a:b
-        );
 
 
 
         return {
 
             toxic:
-            highest.label.toLowerCase().includes("toxic")
-            &&
-            highest.score > 0.75,
+            toxicScore >= 0.90,
 
 
             score:
-            highest.score,
+            toxicScore,
 
 
             label:
-            highest.label
+            "TOXIC"
 
         };
 
@@ -89,7 +89,8 @@ async function checkToxicity(message)
 
 
         return {
-            toxic:false
+            toxic:false,
+            score:0
         };
 
     }
