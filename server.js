@@ -4,168 +4,187 @@ const app = express();
 
 app.use(express.json());
 
-
 const PORT = process.env.PORT || 3000;
-
 
 const WEBHOOK = process.env.DISCORD_WEBHOOK;
 
 
+// =========================
+// Roblox sends reports here
+// =========================
 
-app.post("/report", async(req,res)=>{
+app.post("/report", async (req, res) => {
 
+    const body = req.body;
 
-const body = req.body;
-
-
-try{
-
-
-await fetch(WEBHOOK,{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
+    console.log("Report received:", body);
 
 
-body:JSON.stringify({
-
-embeds:[
-
-{
-
-title:"⚠ Toxic Chat Detected",
-
-color:16711680,
+    if (!WEBHOOK) {
+        console.log("Missing Discord webhook");
+        return res.sendStatus(500);
+    }
 
 
-fields:[
+    try {
 
-{
-name:"Player",
-value:body.player
-},
+        const joinLink =
+        `https://roblox-discord-backend-lieu.onrender.com/join?place=${body.placeId}&job=${body.jobId}`;
 
 
-{
-name:"User ID",
-value:String(body.userid)
-},
+        await fetch(WEBHOOK, {
+
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
 
 
-{
-name:"Message",
-value:body.message
-},
+            body: JSON.stringify({
+
+                embeds: [
+
+                    {
+
+                        title: "⚠ Toxic Chat Detected",
+
+                        color: 16711680,
 
 
-{
-name:"Server JobId",
-value:body.jobId
-}
-
-],
+                        description:
+                        `**Message:** ${body.message}\n\n` +
+                        `[🎮 Join Server](${joinLink})`,
 
 
-timestamp:new Date()
+                        fields: [
 
-}
-
-]
-
-,
-
-
-components:[
-
-{
-
-type:1,
+                            {
+                                name: "Player",
+                                value: body.player || "Unknown",
+                                inline: true
+                            },
 
 
-components:[
-
-{
-
-type:2,
-
-style:5,
-
-label:"Join Server",
-
-url:
-
-`https://roblox-discord-backend-lieu.onrender.com/join?place=${body.placeId}&job=${body.jobId}`
+                            {
+                                name: "User ID",
+                                value: String(body.userid || "Unknown"),
+                                inline: true
+                            },
 
 
-}
-
-]
-
-}
-
-]
+                            {
+                                name: "Server JobId",
+                                value: body.jobId || "Unknown"
+                            },
 
 
-})
+                            {
+                                name: "Place ID",
+                                value: String(body.placeId || "Unknown")
+                            }
+
+                        ],
 
 
-});
+                        footer: {
+
+                            text: "Roblox Moderation System"
+
+                        },
 
 
-res.sendStatus(200);
+                        timestamp: new Date().toISOString()
+
+                    }
+
+                ]
+
+            })
+
+        });
 
 
-}catch(err){
+        res.sendStatus(200);
 
-console.log(err);
 
-res.sendStatus(500);
+    } catch (err) {
 
-}
+        console.error("Discord Error:", err);
 
+        res.sendStatus(500);
+
+    }
 
 });
 
 
 
 
+// =========================
+// Join Server Redirect
+// =========================
 
-app.get("/join",(req,res)=>{
-
-
-const place = req.query.place;
-
-const job = req.query.job;
+app.get("/join", (req, res) => {
 
 
+    const place = req.query.place;
 
-const robloxLink =
-
-`roblox://experiences/start?placeId=${place}&gameInstanceId=${job}`;
-
+    const job = req.query.job;
 
 
-res.send(`
+    if (!place || !job) {
 
-<h1>Joining Roblox Server...</h1>
+        return res.send(
+            "Missing PlaceId or JobId"
+        );
 
-<a href="${robloxLink}">
-Click here if Roblox did not open
-</a>
-
-
-<script>
-
-window.location.href="${robloxLink}";
-
-</script>
+    }
 
 
-`);
 
+    const robloxLink =
+    `roblox://experiences/start?placeId=${place}&gameInstanceId=${job}`;
+
+
+
+    res.send(`
+
+        <!DOCTYPE html>
+
+        <html>
+
+        <head>
+
+        <title>Joining Roblox Server</title>
+
+        </head>
+
+
+        <body>
+
+        <h2>Joining Roblox Server...</h2>
+
+        <p>If Roblox does not open automatically:</p>
+
+
+        <a href="${robloxLink}">
+            Click here to join
+        </a>
+
+
+        <script>
+
+        window.location.href = "${robloxLink}";
+
+        </script>
+
+
+        </body>
+
+        </html>
+
+    `);
 
 
 });
@@ -173,9 +192,27 @@ window.location.href="${robloxLink}";
 
 
 
+// =========================
+// Health Check
+// =========================
 
-app.listen(PORT,()=>{
+app.get("/", (req,res)=>{
 
-console.log("Backend running");
+    res.send("Roblox Discord Backend Online");
+
+});
+
+
+
+
+// =========================
+// Start Server
+// =========================
+
+app.listen(PORT, () => {
+
+    console.log(
+        `Backend running on port ${PORT}`
+    );
 
 });
